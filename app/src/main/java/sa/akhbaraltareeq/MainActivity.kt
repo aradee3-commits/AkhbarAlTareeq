@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var repo: NewsRepository
     @Volatile private var offlineTts: OfflineTts? = null
     @Volatile private var voiceReady = false
+    @Volatile private var voiceInitializing = false
     @Volatile private var stopRequested = false
     @Volatile private var audioTrack: AudioTrack? = null
     private var dark = false
@@ -39,7 +40,6 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = NewsRepository(this)
-        initializeOfflineVoice()
         scheduleRefresh()
         render("الرئيسية")
         refreshNews()
@@ -61,7 +61,7 @@ class MainActivity : Activity() {
         }
 
     private fun button(text: String, action: () -> Unit) = Button(this).apply {
-        this.text = text; textSize = 16f; isAllCaps = false; setOnClickListener { action() }
+        this.text = text; textSize = 13f; isAllCaps = false; setOnClickListener { action() }
     }
 
     private fun render(section: String) {
@@ -71,7 +71,7 @@ class MainActivity : Activity() {
             setPadding(14, 8, 14, 8); setBackgroundColor(paper)
         }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(label("أخبار الطريق", 27f, true), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(label("أخبار الطريق", 22f, true), LinearLayout.LayoutParams(0, -2, 1f))
         header.addView(button(if (dark) "فاتح" else "داكن") { dark = !dark; render(section) })
         root.addView(header)
         val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
@@ -107,7 +107,7 @@ class MainActivity : Activity() {
 
     private fun showNews(section: String) {
         content.removeAllViews()
-        content.addView(label(section, 24f, true))
+        content.addView(label(section, 20f, true))
         val items = repo.readCache().filter {
             when (section) {
                 "السعودية" -> it.category == "السعودية"
@@ -117,15 +117,15 @@ class MainActivity : Activity() {
             }
         }
         if (items.isEmpty()) {
-            content.addView(label("لا توجد أخبار محفوظة لهذا القسم حالياً. تحقق من اتصال الإنترنت ثم اضغط تحديث الأخبار.", 19f))
+            content.addView(label("لا توجد أخبار محفوظة لهذا القسم حالياً. تحقق من اتصال الإنترنت ثم اضغط تحديث الأخبار.", 15f))
             return
         }
         items.forEach { item ->
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(12, 8, 12, 8); setBackgroundColor(panel)
             }
-            card.addView(label(item.title, 19f, true))
-            if (item.description.isNotBlank()) card.addView(label(item.description, 16f))
+            card.addView(label(item.title, 16f, true))
+            if (item.description.isNotBlank()) card.addView(label(item.description, 14f))
             card.addView(label(item.source + " • " + item.category, 13f))
             card.addView(button("استمع إلى الخبر") {
                 speakNews(item.title + ". " + item.description)
@@ -137,24 +137,24 @@ class MainActivity : Activity() {
 
     private fun showSettings() {
         content.removeAllViews()
-        content.addView(label("إعدادات الأخبار", 24f, true))
-        content.addView(label("المناطق التي تريد متابعة أخبارها", 19f, true))
+        content.addView(label("إعدادات الأخبار", 20f, true))
+        content.addView(label("المناطق التي تريد متابعة أخبارها", 16f, true))
         listOf("المدينة المنورة", "تبوك", "مكة المكرمة", "الرياض", "جدة", "المنطقة الشرقية", "عسير").forEach { region ->
             val cb = CheckBox(this).apply {
-                text = region; textSize = 17f; setTextColor(ink); isChecked = repo.selectedRegions().contains(region)
+                text = region; textSize = 15f; setTextColor(ink); isChecked = repo.selectedRegions().contains(region)
                 setOnCheckedChangeListener { _, checked -> repo.setRegion(region, checked) }
             }
             content.addView(cb)
         }
-        content.addView(label("مصادر الأخبار (RSS)", 19f, true))
+        content.addView(label("مصادر الأخبار (RSS)", 16f, true))
         repo.sources().forEachIndexed { index, source ->
             val cb = CheckBox(this).apply {
-                text = source.name; textSize = 16f; setTextColor(ink); isChecked = source.enabled
+                text = source.name; textSize = 14f; setTextColor(ink); isChecked = source.enabled
                 setOnCheckedChangeListener { _, checked -> repo.toggleSource(index); status.text = "تم تحديث اختيار المصادر" }
             }
             content.addView(cb)
         }
-        val name = EditText(this).apply { hint = "اسم المصدر الجديد"; textSize = 16f }
+        val name = EditText(this).apply { hint = "اسم المصدر الجديد"; textSize = 13f }
         val url = EditText(this).apply { hint = "رابط RSS يبدأ بـ https://"; textSize = 14f }
         content.addView(name); content.addView(url)
         content.addView(button("إضافة مصدر RSS") {
@@ -170,7 +170,14 @@ class MainActivity : Activity() {
     }
 
     // Offline Arabic male voice using Piper Kareem and sherpa-onnx.
-    private fun initializeOfflineVoice() {
+    // Load the large speech model only when the user first requests playback.
+    private fun initializeOfflineVoice(onReady: (() -> Unit)? = null) {
+        if (voiceInitializing || voiceReady) {
+            if (voiceReady) onReady?.invoke()
+            return
+        }
+        voiceInitializing = true
+        runOnUiThread { if (::status.isInitialized) status.text = "جارٍ تجهيز الصوت عند أول استخدام..." }
         thread(name = "voice-init") {
             try {
                 piperPhonemizeInitialize(applicationContext)
@@ -181,13 +188,17 @@ class MainActivity : Activity() {
                 )
                 offlineTts = OfflineTts(assetManager = assets, config = config)
                 voiceReady = true
+                voiceInitializing = false
                 runOnUiThread {
                     if (::status.isInitialized) status.text = "الصوت العربي الرجالي جاهز • يعمل دون إنترنت"
+                    onReady?.invoke()
                 }
             } catch (e: Exception) {
                 voiceReady = false
+                voiceInitializing = false
                 runOnUiThread {
                     if (::status.isInitialized) status.text = "تعذر تجهيز الصوت: ${e.message ?: "خطأ غير معروف"}"
+                    Toast.makeText(this, "تعذر تجهيز الصوت: ${e.message ?: "خطأ غير معروف"}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -196,7 +207,8 @@ class MainActivity : Activity() {
     private fun speakNews(text: String) {
         val engine = offlineTts
         if (!voiceReady || engine == null) {
-            Toast.makeText(this, "الصوت العربي ما زال قيد التجهيز، حاول بعد قليل.", Toast.LENGTH_LONG).show()
+            if (!voiceInitializing) initializeOfflineVoice { speakNews(text) }
+            else Toast.makeText(this, "جارٍ تجهيز الصوت، انتظر قليلاً ثم أعد الضغط.", Toast.LENGTH_LONG).show()
             return
         }
         stopSpeech()
