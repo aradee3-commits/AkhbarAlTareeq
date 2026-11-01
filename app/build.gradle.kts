@@ -22,4 +22,6 @@ android {
 
 dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation(files("libs/sherpa-onnx-2.0.1.aar"))
+    implementation("com.github.csukuangfj.piper-phonemize:piper-phonemize:v1.5.9")
 }
