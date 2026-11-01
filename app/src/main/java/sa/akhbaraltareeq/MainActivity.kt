@@ -2,7 +2,6 @@ package sa.akhbaraltareeq
 
 import android.app.Activity
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
@@ -11,13 +10,24 @@ import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
-class MainActivity : Activity(), TextToSpeech.OnInitListener {
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import com.k2fsa.sherpa.onnx.GenerationConfig
+import com.k2fsa.sherpa.onnx.OfflineTts
+import com.k2fsa.sherpa.onnx.getOfflineTtsConfig
+import com.github.csukuangfj.piper.phonemize.piperPhonemizeInitialize
+import com.github.csukuangfj.piper.phonemize.piperPhonemizeText
+
+class MainActivity : Activity() {
     private lateinit var repo: NewsRepository
-    private var tts: TextToSpeech? = null
+    @Volatile private var offlineTts: OfflineTts? = null
+    @Volatile private var voiceReady = false
+    @Volatile private var stopRequested = false
+    @Volatile private var audioTrack: AudioTrack? = null
     private var dark = false
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
@@ -29,7 +39,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = NewsRepository(this)
-        tts = TextToSpeech(this, this)
+        initializeOfflineVoice()
         scheduleRefresh()
         render("الرئيسية")
         refreshNews()
@@ -71,7 +81,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.addView(nav)
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         actions.addView(button("تحديث الأخبار") { refreshNews() }, LinearLayout.LayoutParams(0, -2, 1f))
-        actions.addView(button("إيقاف الصوت") { tts?.stop() }, LinearLayout.LayoutParams(0, -2, 1f))
+        actions.addView(button("إيقاف الصوت") { stopSpeech() }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(actions)
         status = label("الأخبار المحفوظة متاحة دون إنترنت • الاحتفاظ بآخر 3 أيام", 14f)
         root.addView(status)
@@ -156,49 +166,104 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 Toast.makeText(this, e.message ?: "تعذر إضافة المصدر", Toast.LENGTH_LONG).show()
             }
         })
-        content.addView(label("يتم التحديث دورياً عند توفر الشبكة، وقد يؤخر Android التنفيذ لتوفير البطارية. القراءة الصوتية تعتمد على الأصوات العربية المثبتة في الشاشة.", 15f))
+        content.addView(label("يتم التحديث دورياً عند توفر الشبكة، وقد يؤخر Android التنفيذ لتوفير البطارية. الصوت عربي رجالي يعمل محلياً دون إنترنت.", 15f))
     }
 
-    // Android TTS has no standard gender property; only use voices explicitly marked male.
-    private var maleVoiceReady = false
-
-    private fun selectSaudiMaleVoice(): Boolean {
-        val engine = tts ?: return false
-        val arabic = (engine.voices ?: return false).filter { it.locale.language == "ar" }
-        val maleHints = listOf("male", "man", "masculine", "m1", "arabic_male", "ذكر", "رجال")
-        val candidate = arabic.firstOrNull { voice ->
-            val n = voice.name.lowercase(Locale.ROOT)
-            maleHints.any { n.contains(it) } && voice.locale.country.equals("SA", true)
-        } ?: arabic.firstOrNull { voice ->
-            val n = voice.name.lowercase(Locale.ROOT)
-            maleHints.any { n.contains(it) }
-        }
-        if (candidate == null) return false
-        engine.voice = candidate
-        engine.setLanguage(candidate.locale)
-        return true
-    }
-
-    private fun speakNews(text: String) {
-        if (!maleVoiceReady) {
-            Toast.makeText(this, "لم أجد صوتاً عربياً رجاليّاً مثبتاً. ثبّت صوتاً عربياً رجاليّاً من إعدادات تحويل النص إلى كلام في الجهاز.", Toast.LENGTH_LONG).show()
-            return
-        }
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "news")
-    }
-
-    override fun onInit(result: Int) {
-        if (result == TextToSpeech.SUCCESS) {
-            maleVoiceReady = selectSaudiMaleVoice()
-            runOnUiThread {
-                if (::status.isInitialized) status.text =
-                    if (maleVoiceReady) "تم اختيار الصوت العربي الرجالي المتاح." else
-                        "لم يُعثر على صوت عربي رجالي مثبت؛ يرجى تثبيته من إعدادات تحويل النص إلى كلام."
+    // Offline Arabic male voice using Piper Kareem and sherpa-onnx.
+    private fun initializeOfflineVoice() {
+        status.post { status.text = "جارٍ تجهيز الصوت العربي الرجالي..." }
+        thread(name = "voice-init") {
+            try {
+                piperPhonemizeInitialize(applicationContext)
+                val config = getOfflineTtsConfig(
+                    modelDir = "kareem",
+                    modelName = "ar_JO-kareem-medium.onnx",
+                    numThreads = 2
+                )
+                offlineTts = OfflineTts(assetManager = assets, config = config)
+                voiceReady = true
+                runOnUiThread {
+                    if (::status.isInitialized) status.text = "الصوت العربي الرجالي جاهز • يعمل دون إنترنت"
+                }
+            } catch (e: Exception) {
+                voiceReady = false
+                runOnUiThread {
+                    if (::status.isInitialized) status.text = "تعذر تجهيز الصوت: ${e.message ?: "خطأ غير معروف"}"
+                }
             }
         }
     }
 
+    private fun speakNews(text: String) {
+        val engine = offlineTts
+        if (!voiceReady || engine == null) {
+            Toast.makeText(this, "الصوت العربي ما زال قيد التجهيز، حاول بعد قليل.", Toast.LENGTH_LONG).show()
+            return
+        }
+        stopSpeech()
+        stopRequested = false
+        val spokenText = text.replace(Regex("\\s+"), " ").take(1400)
+        thread(name = "news-speech") {
+            var track: AudioTrack? = null
+            try {
+                val language = engine.lang().ifBlank { "ar-jo" }
+                val phonemes = piperPhonemizeText(spokenText, language)
+                    ?: throw IllegalStateException("تعذر تحويل النص العربي إلى صوت")
+                val codes = try {
+                    Array(phonemes.numSentences) { i -> phonemes.getPhonemes(i) }
+                } finally {
+                    phonemes.close()
+                }
+                val generated = engine.generateWithConfig(
+                    text = "",
+                    config = GenerationConfig(sid = 0, speed = 0.94f, phonemeCodepoints = codes)
+                )
+                if (stopRequested || generated.samples.isEmpty()) return@thread
+                val sampleRate = generated.sampleRate
+                val minBuffer = AudioTrack.getMinBufferSize(
+                    sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT
+                ).coerceAtLeast(4096)
+                track = AudioTrack.Builder()
+                    .setAudioAttributes(AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                    .setAudioFormat(AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                    .setBufferSizeInBytes(minBuffer * 2)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build()
+                audioTrack = track
+                track.play()
+                var offset = 0
+                while (offset < generated.samples.size && !stopRequested) {
+                    val count = minOf(2048, generated.samples.size - offset)
+                    val written = track.write(generated.samples, offset, count, AudioTrack.WRITE_BLOCKING)
+                    if (written <= 0) break
+                    offset += written
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "تعذر تشغيل الصوت: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                try { track?.stop() } catch (_: Exception) {}
+                track?.release()
+                if (audioTrack === track) audioTrack = null
+            }
+        }
+    }
+
+    private fun stopSpeech() {
+        stopRequested = true
+        try { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.stop() } catch (_: Exception) {}
+    }
+
     override fun onDestroy() {
-        tts?.stop(); tts?.shutdown(); super.onDestroy()
+        stopSpeech()
+        try { offlineTts?.release() } catch (_: Exception) {}
+        offlineTts = null
+        super.onDestroy()
     }
 }
