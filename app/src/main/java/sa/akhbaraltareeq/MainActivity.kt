@@ -118,7 +118,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (item.description.isNotBlank()) card.addView(label(item.description, 16f))
             card.addView(label(item.source + " • " + item.category, 13f))
             card.addView(button("استمع إلى الخبر") {
-                tts?.speak(item.title + ". " + item.description, TextToSpeech.QUEUE_FLUSH, null, "news")
+                speakNews(item.title + ". " + item.description)
             })
             content.addView(card)
             val gap = Space(this); content.addView(gap, LinearLayout.LayoutParams(1, 8))
@@ -159,11 +159,41 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         content.addView(label("يتم التحديث دورياً عند توفر الشبكة، وقد يؤخر Android التنفيذ لتوفير البطارية. القراءة الصوتية تعتمد على الأصوات العربية المثبتة في الشاشة.", 15f))
     }
 
+    // Android TTS has no standard gender property; only use voices explicitly marked male.
+    private var maleVoiceReady = false
+
+    private fun selectSaudiMaleVoice(): Boolean {
+        val engine = tts ?: return false
+        val arabic = (engine.voices ?: return false).filter { it.locale.language == "ar" }
+        val maleHints = listOf("male", "man", "masculine", "m1", "arabic_male", "ذكر", "رجال")
+        val candidate = arabic.firstOrNull { voice ->
+            val n = voice.name.lowercase(Locale.ROOT)
+            maleHints.any { n.contains(it) } && voice.locale.country.equals("SA", true)
+        } ?: arabic.firstOrNull { voice ->
+            val n = voice.name.lowercase(Locale.ROOT)
+            maleHints.any { n.contains(it) }
+        }
+        if (candidate == null) return false
+        engine.voice = candidate
+        engine.setLanguage(candidate.locale)
+        return true
+    }
+
+    private fun speakNews(text: String) {
+        if (!maleVoiceReady) {
+            Toast.makeText(this, "لم أجد صوتاً عربياً رجاليّاً مثبتاً. ثبّت صوتاً عربياً رجاليّاً من إعدادات تحويل النص إلى كلام في الجهاز.", Toast.LENGTH_LONG).show()
+            return
+        }
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "news")
+    }
+
     override fun onInit(result: Int) {
         if (result == TextToSpeech.SUCCESS) {
-            val res = tts?.setLanguage(Locale("ar", "SA"))
-            if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
-                runOnUiThread { if (::status.isInitialized) status.text = "الصوت العربي غير متوفر في محرك الشاشة حالياً." }
+            maleVoiceReady = selectSaudiMaleVoice()
+            runOnUiThread {
+                if (::status.isInitialized) status.text =
+                    if (maleVoiceReady) "تم اختيار الصوت العربي الرجالي المتاح." else
+                        "لم يُعثر على صوت عربي رجالي مثبت؛ يرجى تثبيته من إعدادات تحويل النص إلى كلام."
             }
         }
     }
