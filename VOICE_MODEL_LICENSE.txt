@@ -1,0 +1,4 @@
+صوت Kareem العربي الأردني (ar_JO-kareem-medium) من مشروع Piper Voices.
+المصدر: https://huggingface.co/rhasspy/piper-voices
+ملف النموذج مرخص وفق MIT كما هو موضح في بطاقة النموذج.
+المحرك sherpa-onnx مرخص وفق Apache-2.0.
