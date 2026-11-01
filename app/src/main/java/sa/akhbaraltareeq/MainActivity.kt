@@ -171,7 +171,6 @@ class MainActivity : Activity() {
 
     // Offline Arabic male voice using Piper Kareem and sherpa-onnx.
     private fun initializeOfflineVoice() {
-        status.post { status.text = "جارٍ تجهيز الصوت العربي الرجالي..." }
         thread(name = "voice-init") {
             try {
                 piperPhonemizeInitialize(applicationContext)
