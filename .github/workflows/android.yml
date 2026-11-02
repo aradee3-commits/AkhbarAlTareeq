@@ -25,14 +25,6 @@ jobs:
           gradle-version: "8.9"
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
-      - name: Download offline Arabic voice and Sherpa runtime
-        run: |
-          mkdir -p app/libs app/src/main/assets/kareem
-          curl -fL --retry 3 "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar" -o app/libs/sherpa-onnx-2.0.1.aar
-          curl -fL --retry 3 "https://huggingface.co/rhasspy/piper-voices/resolve/main/ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx" -o app/src/main/assets/kareem/ar_JO-kareem-medium.onnx
-          curl -fL --retry 3 "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx.json" -o app/src/main/assets/kareem/ar_JO-kareem-medium.onnx.json
-          echo "9e95cab07b679da603bba17c4dec7ab3111320571964ee95c0379603c086491e  app/src/main/assets/kareem/ar_JO-kareem-medium.onnx" | sha256sum -c -
-          test -s app/src/main/assets/kareem/ar_JO-kareem-medium.onnx.json
       - name: Build debug APK
         run: gradle assembleDebug
       - name: Upload APK
