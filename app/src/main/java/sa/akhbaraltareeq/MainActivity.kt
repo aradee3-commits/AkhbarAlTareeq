@@ -184,7 +184,7 @@ class MainActivity : Activity() {
                 val config = getOfflineTtsConfig(
                     modelDir = "kareem",
                     modelName = "ar_JO-kareem-medium.onnx",
-                    numThreads = 2
+                    numThreads = 1
                 )
                 offlineTts = OfflineTts(assetManager = assets, config = config)
                 voiceReady = true
@@ -213,7 +213,7 @@ class MainActivity : Activity() {
         }
         stopSpeech()
         stopRequested = false
-        val spokenText = text.replace(Regex("\\s+"), " ").take(1400)
+        val spokenText = text.replace(Regex("\\s+"), " ").take(600)
         thread(name = "news-speech") {
             var track: AudioTrack? = null
             try {
@@ -225,34 +225,44 @@ class MainActivity : Activity() {
                 } finally {
                     phonemes.close()
                 }
-                val generated = engine.generateWithConfig(
-                    text = "",
-                    config = GenerationConfig(sid = 0, speed = 0.94f, phonemeCodepoints = codes)
-                )
-                if (stopRequested || generated.samples.isEmpty()) return@thread
-                val sampleRate = generated.sampleRate
-                val minBuffer = AudioTrack.getMinBufferSize(
-                    sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT
-                ).coerceAtLeast(4096)
-                track = AudioTrack.Builder()
-                    .setAudioAttributes(AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-                    .setAudioFormat(AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-                    .setBufferSizeInBytes(minBuffer * 2)
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .build()
-                audioTrack = track
-                track.play()
-                var offset = 0
-                while (offset < generated.samples.size && !stopRequested) {
-                    val count = minOf(2048, generated.samples.size - offset)
-                    val written = track.write(generated.samples, offset, count, AudioTrack.WRITE_BLOCKING)
-                    if (written <= 0) break
-                    offset += written
+                for (sentence in codes) {
+                    if (stopRequested) break
+                    val generated = engine.generateWithConfig(
+                        text = "",
+                        config = GenerationConfig(
+                            sid = 0, speed = 0.94f,
+                            phonemeCodepoints = arrayOf(sentence)
+                        )
+                    )
+                    if (stopRequested || generated.samples.isEmpty()) continue
+                    if (track == null) {
+                        val sampleRate = generated.sampleRate
+                        val minBuffer = AudioTrack.getMinBufferSize(
+                            sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT
+                        ).coerceAtLeast(4096)
+                        track = AudioTrack.Builder()
+                            .setAudioAttributes(AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                            .setAudioFormat(AudioFormat.Builder()
+                                .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                                .setSampleRate(sampleRate)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                            .setBufferSizeInBytes(minBuffer * 2)
+                            .setTransferMode(AudioTrack.MODE_STREAM)
+                            .build()
+                        audioTrack = track
+                        track.play()
+                    }
+                    var offset = 0
+                    while (offset < generated.samples.size && !stopRequested) {
+                        val count = minOf(2048, generated.samples.size - offset)
+                        val written = track.write(
+                            generated.samples, offset, count, AudioTrack.WRITE_BLOCKING
+                        )
+                        if (written <= 0) break
+                        offset += written
+                    }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
