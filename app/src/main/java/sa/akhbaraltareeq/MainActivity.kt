@@ -83,8 +83,8 @@ class MainActivity : Activity() {
         header.addView(menuButton)
         menuButton.setOnClickListener { showMainMenu(menuButton, section) }
         root.addView(header)
-        status = label("الأخبار المحفوظة متاحة دون إنترنت • الاحتفاظ بآخر 3 أيام", 14f)
-        root.addView(status)
+        status = label("", 12f)
+        status.visibility = View.GONE
         val scroll = ScrollView(this)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(2, 6, 2, 6) }
         scroll.addView(content)
@@ -166,10 +166,20 @@ class MainActivity : Activity() {
             card.addView(label(item.title, newsTextSize, true))
             if (item.description.isNotBlank()) card.addView(label(item.description.take(160) + if (item.description.length > 160) "…" else "", newsTextSize - 2f))
             card.addView(label("◉ " + item.source + " • " + item.category, 12f))
-            val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.RIGHT }
-            val more = button("⋮ خيارات الخبر") { }
-            more.setOnClickListener { showNewsMenu(more, item) }
-            tools.addView(more)
+            val tools = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
+            }
+            val microphone = button("🎙️") {
+                speakNews(item.title + ". " + item.description)
+            }.apply {
+                textSize = 19f
+                minWidth = 0
+                minimumWidth = 0
+                setPadding(8, 2, 8, 2)
+                contentDescription = "استمع إلى الخبر"
+            }
+            tools.addView(microphone, LinearLayout.LayoutParams(-2, -2))
             card.addView(tools)
             content.addView(card)
             val gap = Space(this); content.addView(gap, LinearLayout.LayoutParams(1, 8))
