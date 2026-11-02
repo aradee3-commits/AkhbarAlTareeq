@@ -6,6 +6,13 @@ import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import android.app.AlertDialog
+import android.content.Intent
+import android.net.Uri
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import java.text.SimpleDateFormat
+import java.util.Date
 import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
@@ -25,6 +32,8 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
     private var currentSection = "الرئيسية"
+    private var newsTextSize = 17f
+    private val prefs by lazy { getSharedPreferences("akhbar_settings", MODE_PRIVATE) }
     private val ink get() = if (dark) Color.WHITE else Color.rgb(28, 39, 52)
     private val paper get() = if (dark) Color.rgb(22, 29, 38) else Color.rgb(246, 248, 251)
     private val panel get() = if (dark) Color.rgb(36, 46, 59) else Color.WHITE
@@ -32,6 +41,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = NewsRepository(this)
+        newsTextSize = prefs.getFloat("news_text_size", 17f).coerceIn(13f, 26f)
+        dark = prefs.getBoolean("dark_theme", false)
         scheduleRefresh()
         render("الرئيسية")
         refreshNews()
@@ -45,6 +56,8 @@ class MainActivity : Activity() {
             androidx.work.ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
+    private fun rounded(color: Int, radius: Float = 16f): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = radius }
+
     private fun label(text: String, size: Float, bold: Boolean = false): TextView =
         TextView(this).apply {
             this.text = text; textSize = size; setTextColor(ink); gravity = Gravity.RIGHT
@@ -54,6 +67,8 @@ class MainActivity : Activity() {
 
     private fun button(text: String, action: () -> Unit) = Button(this).apply {
         this.text = text; textSize = 13f; isAllCaps = false; setOnClickListener { action() }
+        backgroundTintList = android.content.res.ColorStateList.valueOf(if (dark) Color.rgb(35, 75, 100) else Color.rgb(220, 237, 246))
+        setTextColor(ink)
     }
 
     private fun render(section: String) {
@@ -63,8 +78,8 @@ class MainActivity : Activity() {
             setPadding(14, 8, 14, 8); setBackgroundColor(paper)
         }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(label("أخبار الطريق", 22f, true), LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(button(if (dark) "فاتح" else "داكن") { dark = !dark; render(section) })
+        header.addView(label("📰 أخبار الطريق", 22f, true), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(button(if (dark) "☀️ فاتح" else "🌙 داكن") { dark = !dark; prefs.edit().putBoolean("dark_theme", dark).apply(); render(section) })
         root.addView(header)
         val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         listOf("الرئيسية", "السعودية", "العالم", "المناطق", "الإعدادات").forEach {
@@ -75,6 +90,12 @@ class MainActivity : Activity() {
         actions.addView(button("تحديث الأخبار") { refreshNews() }, LinearLayout.LayoutParams(0, -2, 1f))
         actions.addView(button("إيقاف الصوت") { stopSpeech() }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(actions)
+        val sizeBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        sizeBar.addView(label("حجم خط الأخبار", 13f, true), LinearLayout.LayoutParams(0, -2, 1f))
+        sizeBar.addView(button("−") { changeTextSize(-1f) })
+        sizeBar.addView(label(newsTextSize.toInt().toString(), 14f, true))
+        sizeBar.addView(button("+") { changeTextSize(1f) })
+        root.addView(sizeBar)
         status = label("الأخبار المحفوظة متاحة دون إنترنت • الاحتفاظ بآخر 3 أيام", 14f)
         root.addView(status)
         val scroll = ScrollView(this)
@@ -83,6 +104,12 @@ class MainActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         if (section == "الإعدادات") showSettings() else showNews(section)
+    }
+
+    private fun changeTextSize(delta: Float) {
+        newsTextSize = (newsTextSize + delta).coerceIn(13f, 26f)
+        prefs.edit().putFloat("news_text_size", newsTextSize).apply()
+        render(currentSection)
     }
 
     private fun refreshNews() {
@@ -114,17 +141,39 @@ class MainActivity : Activity() {
         }
         items.forEach { item ->
             val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; setPadding(12, 8, 12, 8); setBackgroundColor(panel)
+                orientation = LinearLayout.VERTICAL; setPadding(12, 8, 12, 8)
+                background = rounded(panel, 18f); elevation = 3f
             }
-            card.addView(label(item.title, 16f, true))
-            if (item.description.isNotBlank()) card.addView(label(item.description, 14f))
-            card.addView(label(item.source + " • " + item.category, 13f))
-            card.addView(button("استمع إلى الخبر") {
-                speakNews(item.title + ". " + item.description)
-            })
+            card.addView(label(item.title, newsTextSize, true))
+            if (item.description.isNotBlank()) card.addView(label(item.description.take(160) + if (item.description.length > 160) "…" else "", newsTextSize - 2f))
+            card.addView(label("◉ " + item.source + " • " + item.category, 12f))
+            val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            tools.addView(button("▤ موجز") { showSummary(item) }, LinearLayout.LayoutParams(0, -2, 1f))
+            tools.addView(button("☷ التفاصيل") { showDetails(item) }, LinearLayout.LayoutParams(0, -2, 1f))
+            tools.addView(button("🔊 استمع") { speakNews(item.title + ". " + item.description) }, LinearLayout.LayoutParams(0, -2, 1f))
+            card.addView(tools)
             content.addView(card)
             val gap = Space(this); content.addView(gap, LinearLayout.LayoutParams(1, 8))
         }
+    }
+
+    private fun showSummary(item: NewsItem) {
+        val summary = item.description.ifBlank { "لا يتوفر ملخص من المصدر لهذا الخبر." }
+        AlertDialog.Builder(this).setTitle("▤ موجز الخبر")
+            .setMessage(item.title + "\\n\\n" + summary)
+            .setPositiveButton("إغلاق", null)
+            .setNeutralButton("استمع للموجز") { _, _ -> speakNews(item.title + ". " + summary) }.show()
+    }
+
+    private fun showDetails(item: NewsItem) {
+        val details = item.title + "\\n\\n" + item.description + "\\n\\nالمصدر: " + item.source + "\\nالقسم: " + item.category +
+            "\\nتاريخ النشر: " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("ar")).format(Date(item.published))
+        val dialog = AlertDialog.Builder(this).setTitle("☷ تفاصيل الخبر").setMessage(details)
+            .setPositiveButton("إغلاق", null)
+        if (item.link.isNotBlank()) dialog.setNeutralButton("فتح الخبر الأصلي") { _, _ ->
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.link))) } catch (_: Exception) {}
+        }
+        dialog.show()
     }
 
     private fun showSettings() {
