@@ -6,6 +6,13 @@ import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import android.app.AlertDialog
+import android.content.Intent
+import android.net.Uri
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import java.text.SimpleDateFormat
+import java.util.Date
 import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
@@ -25,6 +32,8 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
     private var currentSection = "الرئيسية"
+    private var newsTextSize = 17f
+    private val prefs by lazy { getSharedPreferences("akhbar_settings", MODE_PRIVATE) }
     private val ink get() = if (dark) Color.WHITE else Color.rgb(28, 39, 52)
     private val paper get() = if (dark) Color.rgb(22, 29, 38) else Color.rgb(246, 248, 251)
     private val panel get() = if (dark) Color.rgb(36, 46, 59) else Color.WHITE
@@ -32,6 +41,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = NewsRepository(this)
+        newsTextSize = prefs.getFloat("news_text_size", 17f).coerceIn(13f, 26f)
+        dark = prefs.getBoolean("dark_theme", false)
         scheduleRefresh()
         render("الرئيسية")
         refreshNews()
@@ -45,7 +56,7 @@ class MainActivity : Activity() {
             androidx.work.ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
-    private fun label(text: String, size: Float, bold: Boolean = false): TextView =
+    private fun rounded(color: Int, radius: Float = 16f): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = radius }\n\n    private fun label(text: String, size: Float, bold: Boolean = false): TextView =
         TextView(this).apply {
             this.text = text; textSize = size; setTextColor(ink); gravity = Gravity.RIGHT
             if (bold) setTypeface(null, android.graphics.Typeface.BOLD)
@@ -53,7 +64,7 @@ class MainActivity : Activity() {
         }
 
     private fun button(text: String, action: () -> Unit) = Button(this).apply {
-        this.text = text; textSize = 13f; isAllCaps = false; setOnClickListener { action() }
+        this.text = text; textSize = 13f; isAllCaps = false; setOnClickListener { action() }\n        backgroundTintList = android.content.res.ColorStateList.valueOf(if (dark) Color.rgb(35, 75, 100) else Color.rgb(220, 237, 246))\n        setTextColor(ink)
     }
 
     private fun render(section: String) {
@@ -63,8 +74,8 @@ class MainActivity : Activity() {
             setPadding(14, 8, 14, 8); setBackgroundColor(paper)
         }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(label("أخبار الطريق", 22f, true), LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(button(if (dark) "فاتح" else "داكن") { dark = !dark; render(section) })
+        header.addView(label("📰 أخبار الطريق", 22f, true), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(button(if (dark) "☀️ فاتح" else "🌙 داكن") { dark = !dark; prefs.edit().putBoolean("dark_theme", dark).apply(); render(section) })
         root.addView(header)
         val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         listOf("الرئيسية", "السعودية", "العالم", "المناطق", "الإعدادات").forEach {
@@ -85,7 +96,7 @@ class MainActivity : Activity() {
         if (section == "الإعدادات") showSettings() else showNews(section)
     }
 
-    private fun refreshNews() {
+    private fun changeTextSize(delta: Float) {\n        newsTextSize = (newsTextSize + delta).coerceIn(13f, 26f)\n        prefs.edit().putFloat("news_text_size", newsTextSize).apply()\n        render(currentSection)\n    }\n\n    private fun refreshNews() {
         status.text = "جارٍ تحديث الأخبار..."
         thread {
             val count = repo.refresh()
@@ -127,7 +138,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showSettings() {
+    private fun showSummary(item: NewsItem) {\n        val summary = item.description.ifBlank { "لا يتوفر ملخص من المصدر لهذا الخبر." }\n        AlertDialog.Builder(this).setTitle("▤ موجز الخبر")\n            .setMessage(item.title + "\\n\\n" + summary)\n            .setPositiveButton("إغلاق", null)\n            .setNeutralButton("استمع للموجز") { _, _ -> speakNews(item.title + ". " + summary) }.show()\n    }\n\n    private fun showDetails(item: NewsItem) {\n        val details = item.title + "\\n\\n" + item.description + "\\n\\nالمصدر: " + item.source + "\\nالقسم: " + item.category +\n            "\\nتاريخ النشر: " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("ar")).format(Date(item.published))\n        val dialog = AlertDialog.Builder(this).setTitle("☷ تفاصيل الخبر").setMessage(details)\n            .setPositiveButton("إغلاق", null)\n        if (item.link.isNotBlank()) dialog.setNeutralButton("فتح الخبر الأصلي") { _, _ ->\n            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.link))) } catch (_: Exception) {}\n        }\n        dialog.show()\n    }\n\n    private fun showSettings() {
         content.removeAllViews()
         content.addView(label("إعدادات الأخبار", 20f, true))
         content.addView(label("المناطق التي تريد متابعة أخبارها", 16f, true))
