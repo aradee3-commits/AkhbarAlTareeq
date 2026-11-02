@@ -2,6 +2,7 @@ package sa.akhbaraltareeq
 
 import android.content.Context
 import android.util.Xml
+import android.text.Html
 import org.json.JSONArray
 import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
@@ -17,6 +18,15 @@ data class NewsItem(val title: String, val description: String, val link: String
 data class FeedSource(val name: String, val category: String, val url: String, val enabled: Boolean = true)
 
 class NewsRepository(private val context: Context) {
+    private fun cleanFeedText(raw: String): String {
+        var value = raw.replace(Regex("<[^>]*>"), " ")
+        repeat(3) {
+            val decoded = Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY).toString()
+            if (decoded != value) value = decoded
+        }
+        return value.replace('\u00A0', ' ').replace(Regex("\\s+"), " ").trim()
+    }
+
     private val prefs = context.getSharedPreferences("akhbar_settings", Context.MODE_PRIVATE)
     private val cachePrefs = context.getSharedPreferences("akhbar_cache", Context.MODE_PRIVATE)
     private fun googleNews(q: String) = "https://news.google.com/rss/search?q=" + URLEncoder.encode(q, "UTF-8") + "&hl=ar&gl=SA&ceid=SA:ar"
@@ -77,8 +87,8 @@ class NewsRepository(private val context: Context) {
                         val tag = p.name.lowercase(Locale.ROOT)
                         if (tag == "item" || tag == "entry") { inside = true; title = ""; desc = ""; link = ""; date = "" }
                         else if (inside) when (tag) {
-                            "title" -> title = p.nextText().trim()
-                            "description", "summary", "content" -> desc = p.nextText().replace(Regex("<[^>]*>"), " ").trim()
+                            "title" -> title = cleanFeedText(p.nextText())
+                            "description", "summary", "content" -> desc = cleanFeedText(p.nextText())
                             "link" -> link = (p.getAttributeValue(null, "href") ?: p.nextText()).trim()
                             "pubdate", "published", "updated" -> date = p.nextText().trim()
                         }
@@ -99,7 +109,7 @@ class NewsRepository(private val context: Context) {
     fun readCache(): List<NewsItem> {
         val a = JSONArray(cachePrefs.getString("items", "[]") ?: "[]")
         return (0 until a.length()).map { i -> a.getJSONObject(i).let {
-            NewsItem(it.optString("title"), it.optString("description"), it.optString("link"), it.optString("source"), it.optString("category"), it.optLong("published"))
+            NewsItem(cleanFeedText(it.optString("title")), cleanFeedText(it.optString("description")), it.optString("link"), it.optString("source"), it.optString("category"), it.optLong("published"))
         }}.filter { System.currentTimeMillis() - it.published <= TimeUnit.DAYS.toMillis(3) }
     }
     private fun writeCache(items: List<NewsItem>) {
