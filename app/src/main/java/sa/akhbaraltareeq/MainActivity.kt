@@ -4,6 +4,8 @@ import android.app.Activity
 import android.os.Bundle
 import android.graphics.Color
 import android.view.Gravity
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.view.View
 import android.widget.*
 import android.app.AlertDialog
@@ -36,7 +38,7 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("akhbar_settings", MODE_PRIVATE) }
     private val ink get() = if (dark) Color.WHITE else Color.rgb(28, 39, 52)
     private val paper get() = if (dark) Color.rgb(22, 29, 38) else Color.rgb(246, 248, 251)
-    private val panel get() = if (dark) Color.rgb(36, 46, 59) else Color.WHITE
+    private val panel get() = if (dark) Color.argb(205, 28, 39, 52) else Color.argb(218, 255, 255, 255)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,10 +75,20 @@ class MainActivity : Activity() {
 
     private fun render(section: String) {
         currentSection = section
+        val screen = FrameLayout(this)
+        val backgroundImage = ImageView(this).apply {
+            setImageResource(R.drawable.world_background)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = null
+        }
+        screen.addView(backgroundImage, FrameLayout.LayoutParams(-1, -1))
+        val shade = View(this).apply { setBackgroundColor(Color.argb(92, 0, 0, 0)) }
+        screen.addView(shade, FrameLayout.LayoutParams(-1, -1))
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(14, 8, 14, 8); setBackgroundColor(paper)
+            setPadding(14, 8, 14, 8); setBackgroundColor(Color.TRANSPARENT)
         }
+        screen.addView(root, FrameLayout.LayoutParams(-1, -1))
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         header.addView(label("📰 أخبار الطريق", 22f, true), LinearLayout.LayoutParams(0, -2, 1f))
         val menuButton = button("☰ القائمة") { }
@@ -89,7 +101,7 @@ class MainActivity : Activity() {
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(2, 6, 2, 6) }
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root)
+        setContentView(screen)
         if (section == "الإعدادات") showSettings() else showNews(section)
     }
 
