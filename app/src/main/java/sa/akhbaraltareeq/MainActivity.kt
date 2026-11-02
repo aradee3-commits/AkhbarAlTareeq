@@ -56,7 +56,9 @@ class MainActivity : Activity() {
             androidx.work.ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
-    private fun rounded(color: Int, radius: Float = 16f): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = radius }\n\n    private fun label(text: String, size: Float, bold: Boolean = false): TextView =
+    private fun rounded(color: Int, radius: Float = 16f): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = radius }
+
+    private fun label(text: String, size: Float, bold: Boolean = false): TextView =
         TextView(this).apply {
             this.text = text; textSize = size; setTextColor(ink); gravity = Gravity.RIGHT
             if (bold) setTypeface(null, android.graphics.Typeface.BOLD)
@@ -64,7 +66,9 @@ class MainActivity : Activity() {
         }
 
     private fun button(text: String, action: () -> Unit) = Button(this).apply {
-        this.text = text; textSize = 13f; isAllCaps = false; setOnClickListener { action() }\n        backgroundTintList = android.content.res.ColorStateList.valueOf(if (dark) Color.rgb(35, 75, 100) else Color.rgb(220, 237, 246))\n        setTextColor(ink)
+        this.text = text; textSize = 13f; isAllCaps = false; setOnClickListener { action() }
+        backgroundTintList = android.content.res.ColorStateList.valueOf(if (dark) Color.rgb(35, 75, 100) else Color.rgb(220, 237, 246))
+        setTextColor(ink)
     }
 
     private fun render(section: String) {
@@ -96,7 +100,13 @@ class MainActivity : Activity() {
         if (section == "الإعدادات") showSettings() else showNews(section)
     }
 
-    private fun changeTextSize(delta: Float) {\n        newsTextSize = (newsTextSize + delta).coerceIn(13f, 26f)\n        prefs.edit().putFloat("news_text_size", newsTextSize).apply()\n        render(currentSection)\n    }\n\n    private fun refreshNews() {
+    private fun changeTextSize(delta: Float) {
+        newsTextSize = (newsTextSize + delta).coerceIn(13f, 26f)
+        prefs.edit().putFloat("news_text_size", newsTextSize).apply()
+        render(currentSection)
+    }
+
+    private fun refreshNews() {
         status.text = "جارٍ تحديث الأخبار..."
         thread {
             val count = repo.refresh()
@@ -138,7 +148,26 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showSummary(item: NewsItem) {\n        val summary = item.description.ifBlank { "لا يتوفر ملخص من المصدر لهذا الخبر." }\n        AlertDialog.Builder(this).setTitle("▤ موجز الخبر")\n            .setMessage(item.title + "\\n\\n" + summary)\n            .setPositiveButton("إغلاق", null)\n            .setNeutralButton("استمع للموجز") { _, _ -> speakNews(item.title + ". " + summary) }.show()\n    }\n\n    private fun showDetails(item: NewsItem) {\n        val details = item.title + "\\n\\n" + item.description + "\\n\\nالمصدر: " + item.source + "\\nالقسم: " + item.category +\n            "\\nتاريخ النشر: " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("ar")).format(Date(item.published))\n        val dialog = AlertDialog.Builder(this).setTitle("☷ تفاصيل الخبر").setMessage(details)\n            .setPositiveButton("إغلاق", null)\n        if (item.link.isNotBlank()) dialog.setNeutralButton("فتح الخبر الأصلي") { _, _ ->\n            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.link))) } catch (_: Exception) {}\n        }\n        dialog.show()\n    }\n\n    private fun showSettings() {
+    private fun showSummary(item: NewsItem) {
+        val summary = item.description.ifBlank { "لا يتوفر ملخص من المصدر لهذا الخبر." }
+        AlertDialog.Builder(this).setTitle("▤ موجز الخبر")
+            .setMessage(item.title + "\\n\\n" + summary)
+            .setPositiveButton("إغلاق", null)
+            .setNeutralButton("استمع للموجز") { _, _ -> speakNews(item.title + ". " + summary) }.show()
+    }
+
+    private fun showDetails(item: NewsItem) {
+        val details = item.title + "\\n\\n" + item.description + "\\n\\nالمصدر: " + item.source + "\\nالقسم: " + item.category +
+            "\\nتاريخ النشر: " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("ar")).format(Date(item.published))
+        val dialog = AlertDialog.Builder(this).setTitle("☷ تفاصيل الخبر").setMessage(details)
+            .setPositiveButton("إغلاق", null)
+        if (item.link.isNotBlank()) dialog.setNeutralButton("فتح الخبر الأصلي") { _, _ ->
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.link))) } catch (_: Exception) {}
+        }
+        dialog.show()
+    }
+
+    private fun showSettings() {
         content.removeAllViews()
         content.addView(label("إعدادات الأخبار", 20f, true))
         content.addView(label("المناطق التي تريد متابعة أخبارها", 16f, true))
