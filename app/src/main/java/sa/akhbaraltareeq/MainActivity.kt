@@ -38,7 +38,7 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("akhbar_settings", MODE_PRIVATE) }
     private val ink get() = if (dark) Color.WHITE else Color.rgb(28, 39, 52)
     private val paper get() = if (dark) Color.rgb(22, 29, 38) else Color.rgb(246, 248, 251)
-    private val panel get() = if (dark) Color.argb(205, 28, 39, 52) else Color.argb(218, 255, 255, 255)
+    private val panel get() = if (dark) Color.argb(158, 20, 31, 43) else Color.argb(150, 246, 249, 252)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,8 +69,10 @@ class MainActivity : Activity() {
 
     private fun button(text: String, action: () -> Unit) = Button(this).apply {
         this.text = text; textSize = 13f; isAllCaps = false; setOnClickListener { action() }
-        backgroundTintList = android.content.res.ColorStateList.valueOf(if (dark) Color.rgb(35, 75, 100) else Color.rgb(220, 237, 246))
+        background = rounded(if (dark) Color.rgb(35, 75, 100) else Color.rgb(220, 237, 246), 14f)
         setTextColor(ink)
+        stateListAnimator = null
+        elevation = 2f
     }
 
     private fun render(section: String) {
@@ -92,6 +94,7 @@ class MainActivity : Activity() {
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         header.addView(label("📰 أخبار الطريق", 22f, true), LinearLayout.LayoutParams(0, -2, 1f))
         val menuButton = button("☰ القائمة") { }
+        menuButton.background = rounded(if (dark) Color.rgb(35, 75, 100) else Color.rgb(220, 237, 246), 18f)
         header.addView(menuButton)
         menuButton.setOnClickListener { showMainMenu(menuButton, section) }
         root.addView(header)
@@ -114,8 +117,6 @@ class MainActivity : Activity() {
         menu.menu.add("الإعدادات").setOnMenuItemClickListener { render("الإعدادات"); true }
         menu.menu.add("تحديث الأخبار").setOnMenuItemClickListener { refreshNews(); true }
         menu.menu.add("إيقاف الصوت").setOnMenuItemClickListener { stopSpeech(); true }
-        menu.menu.add("تكبير الخط  +").setOnMenuItemClickListener { changeTextSize(1f); true }
-        menu.menu.add("تصغير الخط  −").setOnMenuItemClickListener { changeTextSize(-1f); true }
         menu.menu.add(if (dark) "تفعيل الوضع الفاتح" else "تفعيل الوضع الداكن")
             .setOnMenuItemClickListener {
                 dark = !dark
@@ -173,7 +174,8 @@ class MainActivity : Activity() {
         items.forEach { item ->
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(12, 8, 12, 8)
-                background = rounded(panel, 18f); elevation = 3f
+                background = rounded(panel, 22f); elevation = 5f
+                clipToOutline = true
             }
             card.addView(label(item.title, newsTextSize, true))
             if (item.description.isNotBlank()) card.addView(label(item.description.take(160) + if (item.description.length > 160) "…" else "", newsTextSize - 2f))
@@ -192,6 +194,16 @@ class MainActivity : Activity() {
                 contentDescription = "استمع إلى الخبر"
             }
             tools.addView(microphone, LinearLayout.LayoutParams(-2, -2))
+            val enlarge = button("+") { changeTextSize(1f) }.apply {
+                textSize = 17f; minWidth = 0; minimumWidth = 0
+                setPadding(12, 0, 12, 0); contentDescription = "تكبير الخط"
+            }
+            tools.addView(enlarge, LinearLayout.LayoutParams(-2, -2))
+            val reduce = button("−") { changeTextSize(-1f) }.apply {
+                textSize = 17f; minWidth = 0; minimumWidth = 0
+                setPadding(12, 0, 12, 0); contentDescription = "تصغير الخط"
+            }
+            tools.addView(reduce, LinearLayout.LayoutParams(-2, -2))
             card.addView(tools)
             content.addView(card)
             val gap = Space(this); content.addView(gap, LinearLayout.LayoutParams(1, 8))
