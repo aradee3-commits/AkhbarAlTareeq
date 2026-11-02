@@ -90,6 +90,12 @@ class MainActivity : Activity() {
         actions.addView(button("تحديث الأخبار") { refreshNews() }, LinearLayout.LayoutParams(0, -2, 1f))
         actions.addView(button("إيقاف الصوت") { stopSpeech() }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(actions)
+        val sizeBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        sizeBar.addView(label("حجم خط الأخبار", 13f, true), LinearLayout.LayoutParams(0, -2, 1f))
+        sizeBar.addView(button("−") { changeTextSize(-1f) })
+        sizeBar.addView(label(newsTextSize.toInt().toString(), 14f, true))
+        sizeBar.addView(button("+") { changeTextSize(1f) })
+        root.addView(sizeBar)
         status = label("الأخبار المحفوظة متاحة دون إنترنت • الاحتفاظ بآخر 3 أيام", 14f)
         root.addView(status)
         val scroll = ScrollView(this)
@@ -135,14 +141,17 @@ class MainActivity : Activity() {
         }
         items.forEach { item ->
             val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; setPadding(12, 8, 12, 8); setBackgroundColor(panel)
+                orientation = LinearLayout.VERTICAL; setPadding(12, 8, 12, 8)
+                background = rounded(panel, 18f); elevation = 3f
             }
-            card.addView(label(item.title, 16f, true))
-            if (item.description.isNotBlank()) card.addView(label(item.description, 14f))
-            card.addView(label(item.source + " • " + item.category, 13f))
-            card.addView(button("استمع إلى الخبر") {
-                speakNews(item.title + ". " + item.description)
-            })
+            card.addView(label(item.title, newsTextSize, true))
+            if (item.description.isNotBlank()) card.addView(label(item.description.take(160) + if (item.description.length > 160) "…" else "", newsTextSize - 2f))
+            card.addView(label("◉ " + item.source + " • " + item.category, 12f))
+            val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            tools.addView(button("▤ موجز") { showSummary(item) }, LinearLayout.LayoutParams(0, -2, 1f))
+            tools.addView(button("☷ التفاصيل") { showDetails(item) }, LinearLayout.LayoutParams(0, -2, 1f))
+            tools.addView(button("🔊 استمع") { speakNews(item.title + ". " + item.description) }, LinearLayout.LayoutParams(0, -2, 1f))
+            card.addView(tools)
             content.addView(card)
             val gap = Space(this); content.addView(gap, LinearLayout.LayoutParams(1, 8))
         }
