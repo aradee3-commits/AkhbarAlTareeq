@@ -79,23 +79,10 @@ class MainActivity : Activity() {
         }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         header.addView(label("📰 أخبار الطريق", 22f, true), LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(button(if (dark) "☀️ فاتح" else "🌙 داكن") { dark = !dark; prefs.edit().putBoolean("dark_theme", dark).apply(); render(section) })
+        val menuButton = button("☰ القائمة") { }
+        header.addView(menuButton)
+        menuButton.setOnClickListener { showMainMenu(menuButton, section) }
         root.addView(header)
-        val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        listOf("الرئيسية", "السعودية", "العالم", "المناطق", "الإعدادات").forEach {
-            nav.addView(button(it) { render(it) }, LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        root.addView(nav)
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        actions.addView(button("تحديث الأخبار") { refreshNews() }, LinearLayout.LayoutParams(0, -2, 1f))
-        actions.addView(button("إيقاف الصوت") { stopSpeech() }, LinearLayout.LayoutParams(0, -2, 1f))
-        root.addView(actions)
-        val sizeBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        sizeBar.addView(label("حجم خط الأخبار", 13f, true), LinearLayout.LayoutParams(0, -2, 1f))
-        sizeBar.addView(button("−") { changeTextSize(-1f) })
-        sizeBar.addView(label(newsTextSize.toInt().toString(), 14f, true))
-        sizeBar.addView(button("+") { changeTextSize(1f) })
-        root.addView(sizeBar)
         status = label("الأخبار المحفوظة متاحة دون إنترنت • الاحتفاظ بآخر 3 أيام", 14f)
         root.addView(status)
         val scroll = ScrollView(this)
@@ -104,6 +91,38 @@ class MainActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         if (section == "الإعدادات") showSettings() else showNews(section)
+    }
+
+    private fun showMainMenu(anchor: View, section: String) {
+        val menu = android.widget.PopupMenu(this, anchor)
+        menu.menu.add("الرئيسية").setOnMenuItemClickListener { render("الرئيسية"); true }
+        menu.menu.add("أخبار السعودية").setOnMenuItemClickListener { render("السعودية"); true }
+        menu.menu.add("أخبار العالم").setOnMenuItemClickListener { render("العالم"); true }
+        menu.menu.add("أخبار المناطق").setOnMenuItemClickListener { render("المناطق"); true }
+        menu.menu.add("الإعدادات").setOnMenuItemClickListener { render("الإعدادات"); true }
+        menu.menu.add("تحديث الأخبار").setOnMenuItemClickListener { refreshNews(); true }
+        menu.menu.add("إيقاف الصوت").setOnMenuItemClickListener { stopSpeech(); true }
+        menu.menu.add("تكبير الخط  +").setOnMenuItemClickListener { changeTextSize(1f); true }
+        menu.menu.add("تصغير الخط  −").setOnMenuItemClickListener { changeTextSize(-1f); true }
+        menu.menu.add(if (dark) "تفعيل الوضع الفاتح" else "تفعيل الوضع الداكن")
+            .setOnMenuItemClickListener {
+                dark = !dark
+                prefs.edit().putBoolean("dark_theme", dark).apply()
+                render(section)
+                true
+            }
+        menu.show()
+    }
+
+    private fun showNewsMenu(anchor: View, item: NewsItem) {
+        val menu = android.widget.PopupMenu(this, anchor)
+        menu.menu.add("موجز الخبر").setOnMenuItemClickListener { showSummary(item); true }
+        menu.menu.add("تفاصيل الخبر").setOnMenuItemClickListener { showDetails(item); true }
+        menu.menu.add("استمع إلى الخبر").setOnMenuItemClickListener {
+            speakNews(item.title + ". " + item.description)
+            true
+        }
+        menu.show()
     }
 
     private fun changeTextSize(delta: Float) {
@@ -147,10 +166,10 @@ class MainActivity : Activity() {
             card.addView(label(item.title, newsTextSize, true))
             if (item.description.isNotBlank()) card.addView(label(item.description.take(160) + if (item.description.length > 160) "…" else "", newsTextSize - 2f))
             card.addView(label("◉ " + item.source + " • " + item.category, 12f))
-            val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            tools.addView(button("▤ موجز") { showSummary(item) }, LinearLayout.LayoutParams(0, -2, 1f))
-            tools.addView(button("☷ التفاصيل") { showDetails(item) }, LinearLayout.LayoutParams(0, -2, 1f))
-            tools.addView(button("🔊 استمع") { speakNews(item.title + ". " + item.description) }, LinearLayout.LayoutParams(0, -2, 1f))
+            val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.RIGHT }
+            val more = button("⋮ خيارات الخبر") { }
+            more.setOnClickListener { showNewsMenu(more, item) }
+            tools.addView(more)
             card.addView(tools)
             content.addView(card)
             val gap = Space(this); content.addView(gap, LinearLayout.LayoutParams(1, 8))
