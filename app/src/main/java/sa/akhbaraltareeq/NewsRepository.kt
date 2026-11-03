@@ -32,17 +32,23 @@ class NewsRepository(private val context: Context) {
     private fun googleNews(q: String) = "https://news.google.com/rss/search?q=" + URLEncoder.encode(q, "UTF-8") + "&hl=ar&gl=SA&ceid=SA:ar"
 
     fun sources(): List<FeedSource> {
+        val regionalNames = listOf("المدينة المنورة", "تبوك", "مكة المكرمة", "الرياض", "جدة", "المنطقة الشرقية", "عسير")
+        val defaults = listOf(
+            FeedSource("أخبار السعودية", "السعودية", googleNews("السعودية")),
+            FeedSource("أخبار العالم", "العالم", googleNews("أخبار العالم"))
+        ) + regionalNames.map { FeedSource(it, "المناطق", googleNews(it)) }
         val saved = prefs.getString("sources", null)
         if (saved != null) {
             val a = JSONArray(saved)
-            return (0 until a.length()).map { i -> a.getJSONObject(i).let { FeedSource(it.optString("name"), it.optString("category"), it.optString("url"), it.optBoolean("enabled", true)) } }
+            val existing = (0 until a.length()).map { i -> a.getJSONObject(i).let {
+                FeedSource(it.optString("name"), it.optString("category"), it.optString("url"), it.optBoolean("enabled", true))
+            } }
+            val completed = existing + defaults.filter { d -> existing.none { it.name == d.name && it.category == d.category } }
+            if (completed.size != existing.size) saveSources(completed)
+            return completed
         }
-        return listOf(
-            FeedSource("أخبار السعودية", "السعودية", googleNews("السعودية")),
-            FeedSource("أخبار العالم", "العالم", googleNews("أخبار العالم")),
-            FeedSource("المدينة المنورة", "المناطق", googleNews("المدينة المنورة")),
-            FeedSource("تبوك", "المناطق", googleNews("تبوك"))
-        )
+        saveSources(defaults)
+        return defaults
     }
     private fun saveSources(list: List<FeedSource>) {
         val a = JSONArray()
