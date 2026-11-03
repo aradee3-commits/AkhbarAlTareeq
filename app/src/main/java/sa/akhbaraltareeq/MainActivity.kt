@@ -205,11 +205,17 @@ class MainActivity : Activity() {
             setTypeface(null, Typeface.BOLD); textDirection = View.TEXT_DIRECTION_RTL
             setPadding(8, 20, 8, 16)
         }, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(TextView(this).apply {
-            text = item.description.take(450); textSize = 28f; setTextColor(ink)
-            gravity = Gravity.CENTER; textAlignment = View.TEXT_ALIGNMENT_CENTER
-            textDirection = View.TEXT_DIRECTION_RTL; setPadding(8, 4, 8, 16)
-        }, LinearLayout.LayoutParams(-1, 0, 1f))
+        val fullBody = item.description.trim().takeIf {
+            it.isNotBlank() && it.replace(Regex("\\s+"), " ").trim() != item.title.replace(Regex("\\s+"), " ").trim()
+        } ?: "لا يتوفر نص تفصيلي لهذا الخبر من مصدر RSS. يمكنك فتح الخبر الأصلي من تفاصيل الخبر."
+        val bodyScroll = ScrollView(this)
+        bodyScroll.addView(TextView(this).apply {
+            text = fullBody; textSize = 27f; setTextColor(ink)
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; textAlignment = View.TEXT_ALIGNMENT_CENTER
+            textDirection = View.TEXT_DIRECTION_RTL; setPadding(10, 12, 10, 20)
+            setLineSpacing(5f, 1.12f)
+        })
+        root.addView(bodyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(TextView(this).apply {
             text = item.source; textSize = 17f; setTextColor(ink); gravity = Gravity.CENTER
         })
@@ -284,7 +290,15 @@ class MainActivity : Activity() {
                 clipToOutline = true
             }
             card.addView(label(item.title, newsTextSize, true))
-            if (item.description.isNotBlank()) card.addView(label(item.description.take(160) + if (item.description.length > 160) "…" else "", newsTextSize - 2f))
+            val body = item.description.trim()
+            val sameAsTitle = body.replace(Regex("\\s+"), " ").trim() == item.title.replace(Regex("\\s+"), " ").trim()
+            if (body.isNotBlank() && !sameAsTitle) {
+                val fullText = label(body, newsTextSize - 1f)
+                fullText.setLineSpacing(3f, 1.08f)
+                card.addView(fullText)
+            } else {
+                card.addView(label("لا يتوفر نص تفصيلي لهذا الخبر في المصدر.", newsTextSize - 1f))
+            }
             card.addView(label("◉ " + item.source + " • " + item.category, 12f))
             val tools = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
