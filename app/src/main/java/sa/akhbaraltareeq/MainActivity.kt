@@ -186,14 +186,24 @@ class MainActivity : Activity() {
 
 
     private fun storyText(item: NewsItem): String {
-        var body = item.description.trim().replace(Regex("\\s+"), " ")
+        val body = item.description.trim().replace(Regex("\\s+"), " ")
         val title = item.title.trim().replace(Regex("\\s+"), " ")
         if (body.isBlank() || title.isBlank()) return body
-        if (body.equals(title, ignoreCase = true)) return ""
+
+        // Ignore punctuation, symbols, whitespace and Arabic diacritics when checking
+        // whether the RSS description merely repeats the headline.
+        fun comparable(value: String): String =
+            value.lowercase(Locale.ROOT)
+                .replace(Regex("[\\p{P}\\p{S}\\p{M}\\s]+"), "")
+
+        val normalizedBody = comparable(body)
+        val normalizedTitle = comparable(title)
+        if (normalizedBody == normalizedTitle) return ""
+
         if (body.startsWith(title, ignoreCase = true)) {
-            body = body.substring(title.length).trimStart(' ', '-', ':', '،', '.', '؛', '|')
+            return body.substring(title.length).trimStart(' ', '-', ':', '،', '.', '؛', '|')
         }
-        return body.trim()
+        return body
     }
 
     private fun showDrivingNews() {
