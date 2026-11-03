@@ -184,6 +184,18 @@ class MainActivity : Activity() {
         initializeOfflineVoice { if (drivingMode && !drivingPaused) speakDrivingItem() }
     }
 
+
+    private fun storyText(item: NewsItem): String {
+        var body = item.description.trim().replace(Regex("\\s+"), " ")
+        val title = item.title.trim().replace(Regex("\\s+"), " ")
+        if (body.isBlank() || title.isBlank()) return body
+        if (body.equals(title, ignoreCase = true)) return ""
+        if (body.startsWith(title, ignoreCase = true)) {
+            body = body.substring(title.length).trimStart(' ', '-', ':', '،', '.', '؛', '|')
+        }
+        return body.trim()
+    }
+
     private fun showDrivingNews() {
         if (!drivingMode || drivingItems.isEmpty()) return
         val item = drivingItems[drivingIndex]
@@ -205,9 +217,9 @@ class MainActivity : Activity() {
             setTypeface(null, Typeface.BOLD); textDirection = View.TEXT_DIRECTION_RTL
             setPadding(8, 20, 8, 16)
         }, LinearLayout.LayoutParams(-1, 0, 1f))
-        val fullBody = item.description.trim().takeIf {
-            it.isNotBlank() && it.replace(Regex("\\s+"), " ").trim() != item.title.replace(Regex("\\s+"), " ").trim()
-        } ?: "لا يتوفر نص تفصيلي لهذا الخبر من مصدر RSS. يمكنك فتح الخبر الأصلي من تفاصيل الخبر."
+        val fullBody = storyText(item).ifBlank {
+            "المصدر لم يرسل تفاصيل إضافية لهذا الخبر. يمكنك فتح الخبر الأصلي من زر التفاصيل."
+        }
         val bodyScroll = ScrollView(this)
         bodyScroll.addView(TextView(this).apply {
             text = fullBody; textSize = 27f; setTextColor(ink)
@@ -263,7 +275,7 @@ class MainActivity : Activity() {
             initializeOfflineVoice { speakDrivingItem() }
             return
         }
-        engine.speak((item.title + ". " + item.description).replace(Regex("\\s+"), " ").take(1800),
+        engine.speak((item.title + ". " + storyText(item)).replace(Regex("\\s+"), " ").take(1800),
             TextToSpeech.QUEUE_FLUSH, null, "driving-${drivingIndex}")
         status.text = "قراءة أخبار القيادة تلقائياً"
     }
@@ -290,14 +302,13 @@ class MainActivity : Activity() {
                 clipToOutline = true
             }
             card.addView(label(item.title, newsTextSize, true))
-            val body = item.description.trim()
-            val sameAsTitle = body.replace(Regex("\\s+"), " ").trim() == item.title.replace(Regex("\\s+"), " ").trim()
-            if (body.isNotBlank() && !sameAsTitle) {
+            val body = storyText(item)
+            if (body.isNotBlank()) {
                 val fullText = label(body, newsTextSize - 1f)
                 fullText.setLineSpacing(3f, 1.08f)
                 card.addView(fullText)
             } else {
-                card.addView(label("لا يتوفر نص تفصيلي لهذا الخبر في المصدر.", newsTextSize - 1f))
+                card.addView(label("المصدر لم يرسل تفاصيل إضافية لهذا الخبر.", newsTextSize - 1f))
             }
             card.addView(label("◉ " + item.source + " • " + item.category, 12f))
             val tools = LinearLayout(this).apply {
