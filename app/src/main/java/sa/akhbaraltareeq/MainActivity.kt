@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.view.MotionEvent
 import java.util.Locale
 
 class MainActivity : Activity() {
@@ -35,6 +37,10 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private var currentSection = "الرئيسية"
     private var newsTextSize = 17f
+    private var drivingItems: List<NewsItem> = emptyList()
+    private var drivingIndex = 0
+    private var drivingPaused = false
+    private var drivingMode = false
     private val prefs by lazy { getSharedPreferences("akhbar_settings", MODE_PRIVATE) }
     private val ink get() = if (dark) Color.WHITE else Color.rgb(28, 39, 52)
     private val paper get() = if (dark) Color.rgb(22, 29, 38) else Color.rgb(246, 248, 251)
@@ -115,6 +121,7 @@ class MainActivity : Activity() {
         menu.menu.add("أخبار العالم").setOnMenuItemClickListener { render("العالم"); true }
         menu.menu.add("أخبار المناطق").setOnMenuItemClickListener { render("المناطق"); true }
         menu.menu.add("الإعدادات").setOnMenuItemClickListener { render("الإعدادات"); true }
+        menu.menu.add("🚗 وضع القيادة - قراءة تلقائية").setOnMenuItemClickListener { startDrivingMode(); true }
         menu.menu.add("تحديث الأخبار").setOnMenuItemClickListener { refreshNews(); true }
         menu.menu.add("إيقاف الصوت").setOnMenuItemClickListener { stopSpeech(); true }
         menu.menu.add(if (dark) "تفعيل الوضع الفاتح" else "تفعيل الوضع الداكن")
@@ -154,6 +161,105 @@ class MainActivity : Activity() {
                 showNews(currentSection)
             }
         }
+    }
+
+
+    private fun startDrivingMode() {
+        drivingItems = repo.readCache().filter {
+            when (currentSection) {
+                "السعودية" -> it.category == "السعودية"
+                "العالم" -> it.category == "العالم"
+                "المناطق" -> it.category == "المناطق" && repo.selectedRegions().any { region -> it.source.contains(region) }
+                else -> true
+            }
+        }
+        if (drivingItems.isEmpty()) {
+            Toast.makeText(this, "لا توجد أخبار لقراءتها حالياً", Toast.LENGTH_LONG).show()
+            return
+        }
+        drivingIndex = 0
+        drivingPaused = false
+        drivingMode = true
+        showDrivingNews()
+        initializeOfflineVoice { if (drivingMode && !drivingPaused) speakDrivingItem() }
+    }
+
+    private fun showDrivingNews() {
+        if (!drivingMode || drivingItems.isEmpty()) return
+        val item = drivingItems[drivingIndex]
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(22, 18, 22, 18)
+            setBackgroundColor(if (dark) Color.rgb(12, 20, 29) else Color.rgb(239, 245, 249))
+        }
+        root.addView(TextView(this).apply {
+            text = "وضع القيادة  •  ${drivingIndex + 1} / ${drivingItems.size}"
+            textSize = 20f; setTextColor(ink); gravity = Gravity.CENTER
+            setTypeface(null, Typeface.BOLD)
+        }, LinearLayout.LayoutParams(-1, -2))
+        root.addView(TextView(this).apply {
+            text = item.title; textSize = 40f; setTextColor(ink)
+            gravity = Gravity.CENTER; textAlignment = View.TEXT_ALIGNMENT_CENTER
+            setTypeface(null, Typeface.BOLD); textDirection = View.TEXT_DIRECTION_RTL
+            setPadding(8, 20, 8, 16)
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(TextView(this).apply {
+            text = item.description.take(450); textSize = 28f; setTextColor(ink)
+            gravity = Gravity.CENTER; textAlignment = View.TEXT_ALIGNMENT_CENTER
+            textDirection = View.TEXT_DIRECTION_RTL; setPadding(8, 4, 8, 16)
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(TextView(this).apply {
+            text = item.source; textSize = 17f; setTextColor(ink); gravity = Gravity.CENTER
+        })
+        val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
+        controls.addView(button("السابق") { moveDriving(-1) })
+        controls.addView(button(if (drivingPaused) "▶ استئناف" else "Ⅱ إيقاف") {
+            if (drivingPaused) { drivingPaused = false; speakDrivingItem() }
+            else { drivingPaused = true; stopSpeech() }
+            showDrivingNews()
+        })
+        controls.addView(button("التالي") { moveDriving(1) })
+        controls.addView(button("خروج") {
+            drivingMode = false; drivingPaused = true; stopSpeech(); render(currentSection)
+        })
+        root.addView(controls, LinearLayout.LayoutParams(-1, -2))
+        var downY = 0f
+        root.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> { downY = event.y; true }
+                MotionEvent.ACTION_UP -> {
+                    val delta = downY - event.y
+                    if (kotlin.math.abs(delta) > 70) moveDriving(if (delta > 0) 1 else -1)
+                    true
+                }
+                else -> true
+            }
+        }
+        setContentView(root)
+    }
+
+    private fun moveDriving(step: Int) {
+        if (!drivingMode || drivingItems.isEmpty()) return
+        drivingIndex = (drivingIndex + step).coerceIn(0, drivingItems.lastIndex)
+        drivingPaused = false
+        stopSpeech()
+        showDrivingNews()
+        speakDrivingItem()
+    }
+
+    private fun speakDrivingItem() {
+        if (!drivingMode || drivingPaused || drivingItems.isEmpty()) return
+        val item = drivingItems[drivingIndex]
+        val engine = speechEngine
+        if (!voiceReady || engine == null) {
+            initializeOfflineVoice { speakDrivingItem() }
+            return
+        }
+        engine.speak((item.title + ". " + item.description).replace(Regex("\\s+"), " ").take(1800),
+            TextToSpeech.QUEUE_FLUSH, null, "driving-${drivingIndex}")
+        status.text = "قراءة أخبار القيادة تلقائياً"
     }
 
     private fun showNews(section: String) {
@@ -290,6 +396,24 @@ class MainActivity : Activity() {
                         Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
                     } else {
                         engine.setSpeechRate(0.94f)
+
+                        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) {}
+                            override fun onError(utteranceId: String?) {}
+                            override fun onDone(utteranceId: String?) {
+                                if (utteranceId?.startsWith("driving-") == true) runOnUiThread {
+                                    if (drivingMode && !drivingPaused && drivingIndex < drivingItems.lastIndex) {
+                                        drivingIndex++
+                                        showDrivingNews()
+                                        speakDrivingItem()
+                                    } else if (drivingMode && drivingIndex == drivingItems.lastIndex) {
+                                        drivingPaused = true
+                                        showDrivingNews()
+                                        Toast.makeText(this@MainActivity, "انتهت الأخبار المتاحة", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        })
                         voiceReady = true
                         status.text = "الصوت العربي جاهز من محرك أندرويد"
                         onReady?.invoke()
