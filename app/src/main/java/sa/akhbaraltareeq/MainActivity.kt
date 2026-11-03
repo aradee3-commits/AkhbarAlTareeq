@@ -163,7 +163,7 @@ class MainActivity : Activity() {
             when (section) {
                 "السعودية" -> it.category == "السعودية"
                 "العالم" -> it.category == "العالم"
-                "المناطق" -> it.category == "المناطق"
+                "المناطق" -> it.category == "المناطق" && repo.selectedRegions().any { region -> it.source.contains(region) }
                 else -> true
             }
         }
@@ -233,6 +233,7 @@ class MainActivity : Activity() {
         content.removeAllViews()
         content.addView(label("إعدادات الأخبار", 20f, true))
         content.addView(label("المناطق التي تريد متابعة أخبارها", 16f, true))
+        content.addView(label("اختر المناطق ثم اضغط حفظ الاختيارات لتحديث الأخبار وفقاً لها.", 13f))
         listOf("المدينة المنورة", "تبوك", "مكة المكرمة", "الرياض", "جدة", "المنطقة الشرقية", "عسير").forEach { region ->
             val cb = CheckBox(this).apply {
                 text = region; textSize = 15f; setTextColor(ink); isChecked = repo.selectedRegions().contains(region)
@@ -240,6 +241,10 @@ class MainActivity : Activity() {
             }
             content.addView(cb)
         }
+        content.addView(button("✓ حفظ اختيارات المناطق") {
+            Toast.makeText(this, "تم حفظ المناطق المختارة، جارٍ تحديث أخبارها", Toast.LENGTH_SHORT).show()
+            refreshNews()
+        })
         content.addView(label("مصادر الأخبار (RSS)", 16f, true))
         repo.sources().forEachIndexed { index, source ->
             val cb = CheckBox(this).apply {
