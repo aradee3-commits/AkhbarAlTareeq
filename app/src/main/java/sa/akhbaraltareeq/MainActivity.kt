@@ -361,6 +361,16 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
             }
+            val detailsButton = button("☷ التفاصيل") {
+                showDetails(item)
+            }.apply {
+                textSize = 13f
+                minWidth = 0
+                minimumWidth = 0
+                setPadding(10, 2, 10, 2)
+                contentDescription = "عرض تفاصيل الخبر"
+            }
+            tools.addView(detailsButton, LinearLayout.LayoutParams(-2, -2))
             val microphone = button("🎙️") {
                 speakNews(item.title + ". " + item.description)
             }.apply {
