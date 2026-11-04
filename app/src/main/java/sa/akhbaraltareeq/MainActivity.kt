@@ -41,6 +41,8 @@ class MainActivity : Activity() {
     private var drivingIndex = 0
     private var drivingPaused = false
     private var drivingMode = false
+    private val articleAttempts = mutableSetOf<String>()
+    private val articleRequests = mutableSetOf<String>()
     private val prefs by lazy { getSharedPreferences("akhbar_settings", MODE_PRIVATE) }
     private val ink get() = if (dark) Color.WHITE else Color.rgb(28, 39, 52)
     private val paper get() = if (dark) Color.rgb(22, 29, 38) else Color.rgb(246, 248, 251)
@@ -185,8 +187,31 @@ class MainActivity : Activity() {
     }
 
 
+    private fun articleKey(item: NewsItem) = item.link.ifBlank { item.title + "|" + item.source }
+
+    private fun requestFullArticle(item: NewsItem, onComplete: (String) -> Unit) {
+        if (item.articleText.isNotBlank()) { onComplete(item.articleText); return }
+        val key = articleKey(item)
+        if (key in articleRequests) return
+        articleRequests.add(key)
+        thread {
+            val text = try { repo.fetchFullArticle(item) } catch (_: Exception) { "" }
+            if (text.isNotBlank()) repo.saveArticleText(item, text)
+            runOnUiThread {
+                articleRequests.remove(key)
+                if (text.isNotBlank()) {
+                    drivingItems = drivingItems.map { current ->
+                        if (articleKey(current) == key) current.copy(articleText = text) else current
+                    }
+                }
+                onComplete(text)
+            }
+        }
+    }
+
     private fun storyText(item: NewsItem): String {
-        val body = item.description.trim().replace(Regex("\\s+"), " ")
+        val preferred = item.articleText.ifBlank { item.description }
+        val body = preferred.trim().replace(Regex("\\s+"), " ")
         val title = item.title.trim().replace(Regex("\\s+"), " ")
         if (body.isBlank() || title.isBlank()) return body
 
@@ -280,12 +305,23 @@ class MainActivity : Activity() {
     private fun speakDrivingItem() {
         if (!drivingMode || drivingPaused || drivingItems.isEmpty()) return
         val item = drivingItems[drivingIndex]
+        if (item.articleText.isBlank() && articleKey(item) !in articleAttempts) {
+            articleAttempts.add(articleKey(item))
+            status.text = "جارٍ جلب نص الخبر الأصلي..."
+            requestFullArticle(item) {
+                if (drivingMode && !drivingPaused) {
+                    showDrivingNews()
+                    speakDrivingItem()
+                }
+            }
+            return
+        }
         val engine = speechEngine
         if (!voiceReady || engine == null) {
             initializeOfflineVoice { speakDrivingItem() }
             return
         }
-        engine.speak((item.title + ". " + storyText(item)).replace(Regex("\\s+"), " ").take(1800),
+        engine.speak((item.title + ". " + storyText(item)).replace(Regex("\\s+"), " ").take(3500),
             TextToSpeech.QUEUE_FLUSH, null, "driving-${drivingIndex}")
         status.text = "قراءة أخبار القيادة تلقائياً"
     }
