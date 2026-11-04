@@ -39,6 +39,8 @@ class MainActivity : Activity() {
     private var newsTextSize = 17f
     private var drivingItems: List<NewsItem> = emptyList()
     private var drivingIndex = 0
+    private var drivingRepeat = 0
+    private val drivingRepeatLimit = 3
     private var drivingPaused = false
     private var drivingMode = false
     private val articleAttempts = mutableSetOf<String>()
@@ -188,6 +190,7 @@ class MainActivity : Activity() {
             return
         }
         drivingIndex = 0
+        drivingRepeat = 0
         drivingPaused = false
         drivingMode = true
         showDrivingNews()
@@ -304,6 +307,7 @@ class MainActivity : Activity() {
     private fun moveDriving(step: Int) {
         if (!drivingMode || drivingItems.isEmpty()) return
         drivingIndex = (drivingIndex + step).coerceIn(0, drivingItems.lastIndex)
+        drivingRepeat = 0
         drivingPaused = false
         stopSpeech()
         showDrivingNews()
@@ -329,9 +333,11 @@ class MainActivity : Activity() {
             initializeOfflineVoice { speakDrivingItem() }
             return
         }
+        val repeatNumber = (drivingRepeat + 1).coerceAtMost(drivingRepeatLimit)
+        drivingRepeat = repeatNumber
         engine.speak((item.title + ". " + storyText(item)).replace(Regex("\\s+"), " ").take(3500),
-            TextToSpeech.QUEUE_FLUSH, null, "driving-${drivingIndex}")
-        status.text = "قراءة أخبار القيادة تلقائياً"
+            TextToSpeech.QUEUE_FLUSH, null, "driving-${drivingIndex}-$repeatNumber")
+        status.text = "قراءة الخبر $repeatNumber من $drivingRepeatLimit"
     }
 
     private fun showNews(section: String) {
@@ -506,12 +512,19 @@ class MainActivity : Activity() {
                             override fun onStart(utteranceId: String?) {}
                             override fun onError(utteranceId: String?) {}
                             override fun onDone(utteranceId: String?) {
-                                if (utteranceId?.startsWith("driving-") == true) runOnUiThread {
-                                    if (drivingMode && !drivingPaused && drivingIndex < drivingItems.lastIndex) {
+                                val completedId = utteranceId ?: return
+                                if (completedId.startsWith("driving-")) runOnUiThread {
+                                    val expectedPrefix = "driving-" + drivingIndex + "-"
+                                    if (!drivingMode || drivingPaused || !completedId.startsWith(expectedPrefix)) return@runOnUiThread
+                                    if (drivingRepeat < drivingRepeatLimit) {
+                                        speakDrivingItem()
+                                    } else if (drivingIndex < drivingItems.lastIndex) {
                                         drivingIndex++
+                                        drivingRepeat = 0
                                         showDrivingNews()
                                         speakDrivingItem()
-                                    } else if (drivingMode && drivingIndex == drivingItems.lastIndex) {
+                                    } else {
+                                        drivingRepeat = 0
                                         drivingPaused = true
                                         showDrivingNews()
                                         Toast.makeText(this@MainActivity, "انتهت الأخبار المتاحة", Toast.LENGTH_LONG).show()
