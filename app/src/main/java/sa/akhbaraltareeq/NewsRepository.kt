@@ -85,17 +85,29 @@ class NewsRepository(private val context: Context) {
         writeCache(merged)
         return incoming.size
     }
-    // Merge copies of the same story even when RSS providers use different URLs.
-    private fun normalizedHeadline(value: String): String =
-        value.lowercase(Locale.ROOT)
-            .replace(Regex("\\s+[|–—-]\\s+[^|–—-]{2,}$"), "")
-            .replace(Regex("[\\p{P}\\p{S}\\p{M}\\s]+"), "")
+    // Normalize Arabic headlines so publisher names, prefixes and small wording changes
+    // do not create multiple cards for the same story.
+    private val headlineNoise = setOf(
+        "في", "من", "على", "عن", "بعد", "قبل", "مع", "الى", "إلى", "هذا", "هذه",
+        "ذلك", "التي", "الذي", "كما", "حيث", "ضمن", "حول", "أمام", "لدى", "بشأن",
+        "تقرير", "تفاصيل", "صور", "فيديو", "عاجل", "ثقافي", "ثقافية", "رياضي",
+        "اقتصادي", "محلي", "اخبار", "أخبار"
+    )
+
+    private fun normalizedHeadline(value: String): String {
+        var text = value.lowercase(Locale.ROOT)
+            .replace(Regex("\\s+[|–—-]\\s+.*$"), "")
+            .replace(Regex("^(ثقافي|ثقافية|رياضي|اقتصادي|محلي|عاجل)\\s*[/:-]\\s*"), "")
+            .replace(Regex("[\\u064B-\\u065F\\u0670]"), "")
+            .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
+            .replace('ى', 'ي').replace('ة', 'ه')
+            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+        return text.replace(Regex("\\s+"), " ").trim()
+    }
 
     private fun headlineTokens(value: String): Set<String> =
-        value.lowercase(Locale.ROOT)
-            .replace(Regex("[\\p{P}\\p{S}\\p{M}]"), " ")
-            .split(Regex("\\s+"))
-            .filter { it.length >= 2 }
+        normalizedHeadline(value).split(Regex("\\s+"))
+            .filter { it.length >= 2 && it !in headlineNoise }
             .toSet()
 
     private fun deduplicateNews(items: List<NewsItem>): List<NewsItem> {
@@ -107,26 +119,32 @@ class NewsRepository(private val context: Context) {
             val tokens = headlineTokens(item.title)
             var duplicate = -1
             for (i in kept.indices) {
-                if (key.isNotBlank() && key == normalized[i]) {
+                val otherKey = normalized[i]
+                val other = tokenSets[i]
+                if (key.isNotBlank() && key == otherKey) {
                     duplicate = i
                     break
                 }
-                val other = tokenSets[i]
-                if (tokens.size >= 4 && other.size >= 4) {
-                    val overlap = tokens.intersect(other).size
-                    val similarity = overlap.toDouble() / tokens.union(other).size.coerceAtLeast(1)
-                    if (overlap >= 3 && similarity >= 0.72) {
-                        duplicate = i
-                        break
-                    }
+                if (tokens.size < 5 || other.size < 5) continue
+                val overlap = tokens.intersect(other).size
+                val smaller = minOf(tokens.size, other.size).coerceAtLeast(1)
+                val containment = overlap.toDouble() / smaller
+                val unionSimilarity = overlap.toDouble() / tokens.union(other).size.coerceAtLeast(1)
+                // A headline can add context (city, timing, or "report about") while
+                // still describing the same event. Require several meaningful shared terms.
+                if (overlap >= 5 && containment >= 0.78 && unionSimilarity >= 0.48) {
+                    duplicate = i
+                    break
                 }
             }
             if (duplicate < 0) {
-                kept.add(item); normalized.add(key); tokenSets.add(tokens)
+                kept.add(item)
+                normalized.add(key)
+                tokenSets.add(tokens)
             } else {
                 val previous = kept[duplicate]
-                val previousQuality = previous.articleText.length * 2 + previous.description.length
-                val currentQuality = item.articleText.length * 2 + item.description.length
+                val previousQuality = previous.articleText.length * 3 + previous.description.length
+                val currentQuality = item.articleText.length * 3 + item.description.length
                 if (currentQuality > previousQuality) {
                     kept[duplicate] = item
                     normalized[duplicate] = key
