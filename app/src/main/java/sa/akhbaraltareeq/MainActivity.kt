@@ -396,14 +396,28 @@ class MainActivity : Activity() {
     }
 
     private fun showDetails(item: NewsItem) {
-        val details = item.title + "\\n\\n" + item.description + "\\n\\nالمصدر: " + item.source + "\\nالقسم: " + item.category +
-            "\\nتاريخ النشر: " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("ar")).format(Date(item.published))
-        val dialog = AlertDialog.Builder(this).setTitle("☷ تفاصيل الخبر").setMessage(details)
+        val body = item.articleText.ifBlank { item.description.ifBlank { "لا تتوفر تفاصيل إضافية من مصدر الخلاصة." } }
+        val details = item.title + "\n\n" + body + "\n\nالمصدر: " + item.source +
+            "\nالقسم: " + item.category +
+            "\nتاريخ النشر: " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("ar")).format(Date(item.published))
+        val builder = AlertDialog.Builder(this).setTitle("☷ تفاصيل الخبر").setMessage(details)
             .setPositiveButton("إغلاق", null)
-        if (item.link.isNotBlank()) dialog.setNeutralButton("فتح الخبر الأصلي") { _, _ ->
+        if (item.articleText.isBlank()) builder.setNeutralButton("جلب المقال كاملاً") { _, _ ->
+            Toast.makeText(this, "جارٍ جلب المقال من الموقع الأصلي...", Toast.LENGTH_SHORT).show()
+            requestFullArticle(item) { article ->
+                if (article.isNotBlank()) {
+                    showDetails(item.copy(articleText = article))
+                    if (currentSection != "الإعدادات" && !drivingMode) showNews(currentSection)
+                } else {
+                    AlertDialog.Builder(this).setMessage("تعذر استخراج المقال كاملاً؛ قد يمنع الموقع الوصول الآلي أو يعرض الخبر عبر اشتراك. يمكنك فتح الصفحة الأصلية.")
+                        .setPositiveButton("حسناً", null).show()
+                }
+            }
+        }
+        if (item.link.isNotBlank()) builder.setNegativeButton("فتح الخبر الأصلي") { _, _ ->
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.link))) } catch (_: Exception) {}
         }
-        dialog.show()
+        builder.show()
     }
 
     private fun showSettings() {
