@@ -37,7 +37,7 @@ class NewsRepository(private val context: Context) {
         val defaults = listOf(
             FeedSource("أخبار السعودية", "السعودية", googleNews("السعودية")),
             FeedSource("أخبار العالم", "العالم", googleNews("أخبار العالم")),
-            FeedSource("أخبار الرياضة", "الرياضة", googleNews("أخبار الرياضة السعودية والعالمية")),
+            FeedSource("أخبار كرة القدم", "الرياضة", googleNews("(كرة القدم OR دوري روشن OR الدوري السعودي OR المنتخب السعودي OR دوري أبطال أوروبا OR الدوري الإنجليزي OR الدوري الإسباني OR الدوري الإيطالي OR الدوري الألماني OR الدوري الفرنسي OR كأس العالم OR انتقالات اللاعبين) -كرة السلة -التنس -الفورمولا -الطائرة")),
             FeedSource("أخبار التكنولوجيا", "التكنولوجيا", googleNews("التكنولوجيا والذكاء الاصطناعي"))
         ) + regionalNames.map { FeedSource(it, "المناطق", googleNews(it)) }
         val saved = prefs.getString("sources", null)
@@ -46,8 +46,11 @@ class NewsRepository(private val context: Context) {
             val existing = (0 until a.length()).map { i -> a.getJSONObject(i).let {
                 FeedSource(it.optString("name"), it.optString("category"), it.optString("url"), it.optBoolean("enabled", true))
             } }
-            val completed = existing + defaults.filter { d -> existing.none { it.name == d.name && it.category == d.category } }
-            if (completed.size != existing.size) saveSources(completed)
+            val completed = existing.map { current ->
+                val updatedDefault = defaults.firstOrNull { it.category == current.category && (it.name == current.name || (current.category == "الرياضة" && current.name == "أخبار الرياضة")) }
+                if (updatedDefault != null) updatedDefault.copy(enabled = current.enabled) else current
+            } + defaults.filter { d -> existing.none { it.category == d.category && (it.name == d.name || (d.category == "الرياضة" && it.name == "أخبار الرياضة")) } }
+            if (completed != existing) saveSources(completed)
             return completed
         }
         saveSources(defaults)
