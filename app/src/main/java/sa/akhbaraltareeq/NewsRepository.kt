@@ -8,13 +8,14 @@ import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
 import java.net.HttpURLConnection
 import java.net.URL
+import org.jsoup.Jsoup
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
-data class NewsItem(val title: String, val description: String, val link: String, val source: String, val category: String, val published: Long)
+data class NewsItem(val title: String, val description: String, val link: String, val source: String, val category: String, val published: Long, val articleText: String = "")
 data class FeedSource(val name: String, val category: String, val url: String, val enabled: Boolean = true)
 
 class NewsRepository(private val context: Context) {
@@ -103,7 +104,7 @@ class NewsRepository(private val context: Context) {
                             val f = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.US)
                             f.parse(date)?.time ?: System.currentTimeMillis()
                         } catch (_: Exception) { System.currentTimeMillis() }
-                        if (title.isNotBlank()) out.add(NewsItem(title, desc.take(450), link, source.name, source.category, parsed))
+                        if (title.isNotBlank()) out.add(NewsItem(title, desc.take(5000), link, source.name, source.category, parsed))
                         inside = false
                     }
                     event = p.next()
@@ -112,15 +113,57 @@ class NewsRepository(private val context: Context) {
             }
         } finally { c.disconnect() }
     }
+
+    fun saveArticleText(item: NewsItem, text: String) {
+        val cleaned = text.trim()
+        if (cleaned.isBlank()) return
+        val updated = readCache().map {
+            if (it.link == item.link && item.link.isNotBlank()) it.copy(articleText = cleaned)
+            else if (it.title == item.title && it.source == item.source) it.copy(articleText = cleaned)
+            else it
+        }
+        writeCache(updated)
+    }
+
+    fun fetchFullArticle(item: NewsItem): String {
+        if (item.link.isBlank() || !(item.link.startsWith("https://") || item.link.startsWith("http://"))) return ""
+        val connection = Jsoup.connect(item.link)
+            .userAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36")
+            .timeout(18000)
+            .followRedirects(true)
+            .ignoreHttpErrors(true)
+        val doc = connection.get()
+        doc.select("script,style,nav,header,footer,aside,form,button,svg,iframe,noscript,.advert,.ads,.social,.share,.related,.comments,.breadcrumb").remove()
+        val selectors = listOf(
+            "[itemprop=articleBody]", "article", "main", ".article-body", ".article-content",
+            ".story-body", ".story-content", ".entry-content", ".post-content",
+            ".content-body", ".body-content", ".news-details", ".article__body"
+        )
+        var best = ""
+        for (selector in selectors) {
+            val candidate = doc.select(selector).maxByOrNull { it.text().length } ?: continue
+            val paragraphs = candidate.select("p").map { it.text().trim() }.filter { it.length >= 35 }
+            val text = if (paragraphs.isNotEmpty()) paragraphs.joinToString("\\n\\n") else candidate.text()
+            if (text.length > best.length) best = text
+        }
+        if (best.length < 180) {
+            val paragraphs = doc.select("body p").map { it.text().trim() }
+                .filter { it.length >= 45 && !it.contains("اشترك") && !it.contains("تابعنا") }
+            val fallback = paragraphs.joinToString("\\n\\n")
+            if (fallback.length > best.length) best = fallback
+        }
+        return cleanFeedText(best).take(30000)
+    }
+
     fun readCache(): List<NewsItem> {
         val a = JSONArray(cachePrefs.getString("items", "[]") ?: "[]")
         return (0 until a.length()).map { i -> a.getJSONObject(i).let {
-            NewsItem(cleanFeedText(it.optString("title")), cleanFeedText(it.optString("description")), it.optString("link"), it.optString("source"), it.optString("category"), it.optLong("published"))
+            NewsItem(cleanFeedText(it.optString("title")), cleanFeedText(it.optString("description")), it.optString("link"), it.optString("source"), it.optString("category"), it.optLong("published"), cleanFeedText(it.optString("articleText")))
         }}.filter { System.currentTimeMillis() - it.published <= TimeUnit.DAYS.toMillis(3) }
     }
     private fun writeCache(items: List<NewsItem>) {
         val a = JSONArray()
-        items.forEach { a.put(JSONObject().put("title", it.title).put("description", it.description).put("link", it.link).put("source", it.source).put("category", it.category).put("published", it.published)) }
+        items.forEach { a.put(JSONObject().put("title", it.title).put("description", it.description).put("link", it.link).put("source", it.source).put("category", it.category).put("published", it.published).put("articleText", it.articleText)) }
         cachePrefs.edit().putString("items", a.toString()).apply()
     }
 }
