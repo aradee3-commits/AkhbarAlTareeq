@@ -101,6 +101,10 @@ class MainActivity : Activity() {
         screen.addView(root, FrameLayout.LayoutParams(-1, -1))
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         header.addView(label("📰 أخبار الطريق", 22f, true), LinearLayout.LayoutParams(0, -2, 1f))
+        val drivingButton = button("🚗 القيادة") { startDrivingMode() }.apply {
+            textSize = 14f; setPadding(10, 4, 10, 4); contentDescription = "تشغيل وضع القيادة والقراءة التلقائية"
+        }
+        header.addView(drivingButton)
         val menuButton = button("☰ القائمة") { }
         menuButton.background = rounded(if (dark) Color.rgb(35, 75, 100) else Color.rgb(220, 237, 246), 18f)
         header.addView(menuButton)
@@ -121,6 +125,8 @@ class MainActivity : Activity() {
         menu.menu.add("الرئيسية").setOnMenuItemClickListener { render("الرئيسية"); true }
         menu.menu.add("أخبار السعودية").setOnMenuItemClickListener { render("السعودية"); true }
         menu.menu.add("أخبار العالم").setOnMenuItemClickListener { render("العالم"); true }
+        menu.menu.add("أخبار الرياضة").setOnMenuItemClickListener { render("الرياضة"); true }
+        menu.menu.add("أخبار التكنولوجيا").setOnMenuItemClickListener { render("التكنولوجيا"); true }
         menu.menu.add("أخبار المناطق").setOnMenuItemClickListener { render("المناطق"); true }
         menu.menu.add("الإعدادات").setOnMenuItemClickListener { render("الإعدادات"); true }
         menu.menu.add("🚗 وضع القيادة - قراءة تلقائية").setOnMenuItemClickListener { startDrivingMode(); true }
@@ -171,6 +177,8 @@ class MainActivity : Activity() {
             when (currentSection) {
                 "السعودية" -> it.category == "السعودية"
                 "العالم" -> it.category == "العالم"
+                "الرياضة" -> it.category == "الرياضة"
+                "التكنولوجيا" -> it.category == "التكنولوجيا"
                 "المناطق" -> it.category == "المناطق" && repo.selectedRegions().any { region -> it.source.contains(region) }
                 else -> true
             }
@@ -333,6 +341,8 @@ class MainActivity : Activity() {
             when (section) {
                 "السعودية" -> it.category == "السعودية"
                 "العالم" -> it.category == "العالم"
+                "الرياضة" -> it.category == "الرياضة"
+                "التكنولوجيا" -> it.category == "التكنولوجيا"
                 "المناطق" -> it.category == "المناطق" && repo.selectedRegions().any { region -> it.source.contains(region) }
                 else -> true
             }
