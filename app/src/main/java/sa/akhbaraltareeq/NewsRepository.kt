@@ -36,7 +36,9 @@ class NewsRepository(private val context: Context) {
         val regionalNames = listOf("المدينة المنورة", "تبوك", "مكة المكرمة", "الرياض", "جدة", "المنطقة الشرقية", "عسير")
         val defaults = listOf(
             FeedSource("أخبار السعودية", "السعودية", googleNews("السعودية")),
-            FeedSource("أخبار العالم", "العالم", googleNews("أخبار العالم"))
+            FeedSource("أخبار العالم", "العالم", googleNews("أخبار العالم")),
+            FeedSource("أخبار الرياضة", "الرياضة", googleNews("أخبار الرياضة السعودية والعالمية")),
+            FeedSource("أخبار التكنولوجيا", "التكنولوجيا", googleNews("التكنولوجيا والذكاء الاصطناعي"))
         ) + regionalNames.map { FeedSource(it, "المناطق", googleNews(it)) }
         val saved = prefs.getString("sources", null)
         if (saved != null) {
@@ -73,12 +75,65 @@ class NewsRepository(private val context: Context) {
         sources().filter { it.enabled }.filter { it.category != "المناطق" || regions.any { r -> it.name.contains(r) } }.forEach {
             try { incoming.addAll(fetch(it)) } catch (_: Exception) { }
         }
-        val merged = (incoming + readCache()).distinctBy { if (it.link.isNotBlank()) it.link else it.title }
+        val recent = (incoming + readCache())
             .filter { System.currentTimeMillis() - it.published <= TimeUnit.DAYS.toMillis(3) }
-            .sortedByDescending { it.published }.take(250)
+            .sortedByDescending { it.published }
+        val merged = deduplicateNews(recent).take(250)
         writeCache(merged)
         return incoming.size
     }
+    // Merge copies of the same story even when RSS providers use different URLs.
+    private fun normalizedHeadline(value: String): String =
+        value.lowercase(Locale.ROOT)
+            .replace(Regex("\\s+[|–—-]\\s+[^|–—-]{2,}$"), "")
+            .replace(Regex("[\\p{P}\\p{S}\\p{M}\\s]+"), "")
+
+    private fun headlineTokens(value: String): Set<String> =
+        value.lowercase(Locale.ROOT)
+            .replace(Regex("[\\p{P}\\p{S}\\p{M}]"), " ")
+            .split(Regex("\\s+"))
+            .filter { it.length >= 2 }
+            .toSet()
+
+    private fun deduplicateNews(items: List<NewsItem>): List<NewsItem> {
+        val kept = mutableListOf<NewsItem>()
+        val normalized = mutableListOf<String>()
+        val tokenSets = mutableListOf<Set<String>>()
+        for (item in items) {
+            val key = normalizedHeadline(item.title)
+            val tokens = headlineTokens(item.title)
+            var duplicate = -1
+            for (i in kept.indices) {
+                if (key.isNotBlank() && key == normalized[i]) {
+                    duplicate = i
+                    break
+                }
+                val other = tokenSets[i]
+                if (tokens.size >= 4 && other.size >= 4) {
+                    val overlap = tokens.intersect(other).size
+                    val similarity = overlap.toDouble() / tokens.union(other).size.coerceAtLeast(1)
+                    if (overlap >= 3 && similarity >= 0.72) {
+                        duplicate = i
+                        break
+                    }
+                }
+            }
+            if (duplicate < 0) {
+                kept.add(item); normalized.add(key); tokenSets.add(tokens)
+            } else {
+                val previous = kept[duplicate]
+                val previousQuality = previous.articleText.length * 2 + previous.description.length
+                val currentQuality = item.articleText.length * 2 + item.description.length
+                if (currentQuality > previousQuality) {
+                    kept[duplicate] = item
+                    normalized[duplicate] = key
+                    tokenSets[duplicate] = tokens
+                }
+            }
+        }
+        return kept.sortedByDescending { it.published }
+    }
+
     private fun fetch(source: FeedSource): List<NewsItem> {
         val c = URL(source.url).openConnection() as HttpURLConnection
         c.connectTimeout = 12000; c.readTimeout = 12000
